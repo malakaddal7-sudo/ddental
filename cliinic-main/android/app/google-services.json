@@ -1,0 +1,82 @@
+{
+  "project_info": {
+    "project_number": "878273031126",
+    "project_id": "my-firebase-app-2026-bns",
+    "storage_bucket": "my-firebase-app-2026-bns.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:878273031126:android:4f09e2df710dd6cd7ed277",
+        "android_client_info": {
+          "package_name": "dental.app.com"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "878273031126-t75af30n49ns4uibvg6g709703sjo31k.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDUY6_3yniUVfTu-8w2mXPgXEcePr_Ivv0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "878273031126-t75af30n49ns4uibvg6g709703sjo31k.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "878273031126-lq7d3tu2motalrd9sl9lh80l1oekctfa.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.dentalClinic"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:878273031126:android:584b0aaf794d44477ed277",
+        "android_client_info": {
+          "package_name": "dental_clinic.com"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "878273031126-t75af30n49ns4uibvg6g709703sjo31k.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDUY6_3yniUVfTu-8w2mXPgXEcePr_Ivv0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "878273031126-t75af30n49ns4uibvg6g709703sjo31k.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "878273031126-lq7d3tu2motalrd9sl9lh80l1oekctfa.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.dentalClinic"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

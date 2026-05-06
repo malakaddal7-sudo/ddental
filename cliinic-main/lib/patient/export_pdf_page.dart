@@ -1,0 +1,412 @@
+import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
+import '../theme/app_colors.dart';
+import '../widgets/neon_panel.dart';
+import '../widgets/neon_button.dart';
+ 
+/// Patient page: generates and downloads a PDF with appointment history + info.
+class ExportPdfPatientPage extends StatefulWidget {
+  const ExportPdfPatientPage({super.key});
+ 
+  @override
+  State<ExportPdfPatientPage> createState() => _ExportPdfPatientPageState();
+}
+ 
+class _ExportPdfPatientPageState extends State<ExportPdfPatientPage> {
+  bool _generating = false;
+  double _progress = 0;
+ 
+  Future<void> _generateAndDownload() async {
+    setState(() {
+      _generating = true;
+      _progress = 0.1;
+    });
+ 
+    try {
+      final uid = FirebaseAuth.instance.currentUser!.uid;
+ 
+      // ── 1. Fetch patient data ─────────────────────────────────────────────
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .get();
+      final userData = userDoc.data() ?? {};
+      setState(() => _progress = 0.3);
+ 
+      // ── 2. Fetch appointments ─────────────────────────────────────────────
+      // Try patient-specific sub-collection first, fall back to global
+      QuerySnapshot appointmentsSnap;
+      try {
+        appointmentsSnap = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(uid)
+            .collection('appointments')
+            .orderBy('date', descending: true)
+            .get();
+      } catch (_) {
+        appointmentsSnap = await FirebaseFirestore.instance
+            .collection('appointments')
+            .where('patientId', isEqualTo: uid)
+            .orderBy('date', descending: true)
+            .get();
+      }
+      setState(() => _progress = 0.6);
+ 
+      // ── 3. Build PDF ──────────────────────────────────────────────────────
+      final pdf = pw.Document();
+      final now = DateTime.now();
+ 
+      pdf.addPage(
+        pw.MultiPage(
+          pageFormat: PdfPageFormat.a4,
+          margin: const pw.EdgeInsets.all(32),
+          build: (context) => [
+            // Header
+            pw.Header(
+              level: 0,
+              child: pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Text(
+                    'DocLine — Medical Report',
+                    style: pw.TextStyle(
+                        fontSize: 20, fontWeight: pw.FontWeight.bold),
+                  ),
+                  pw.Text(
+                    '${now.day}/${now.month}/${now.year}',
+                    style: pw.TextStyle(
+                        fontSize: 11, color: PdfColors.grey600),
+                  ),
+                ],
+              ),
+            ),
+            pw.SizedBox(height: 16),
+ 
+            // Patient info
+            pw.Text('Patient Information',
+                style: pw.TextStyle(
+                    fontSize: 15, fontWeight: pw.FontWeight.bold)),
+            pw.SizedBox(height: 8),
+            pw.Text(
+                'Name: ${userData['firstName'] ?? ''} ${userData['lastName'] ?? ''}'),
+            pw.Text('Email: ${userData['email'] ?? '-'}'),
+            pw.Text('Phone: ${userData['phone'] ?? '-'}'),
+            pw.SizedBox(height: 20),
+ 
+            // Appointment table
+            pw.Text('Appointments History',
+                style: pw.TextStyle(
+                    fontSize: 15, fontWeight: pw.FontWeight.bold)),
+            pw.SizedBox(height: 8),
+ 
+            if (appointmentsSnap.docs.isEmpty)
+              pw.Text('No appointments found.',
+                  style: pw.TextStyle(color: PdfColors.grey600))
+            else
+              pw.Table.fromTextArray(
+                headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+                headerDecoration:
+                    const pw.BoxDecoration(color: PdfColors.teal100),
+                headers: ['Date', 'Doctor', 'Type', 'Status'],
+                data: appointmentsSnap.docs.map((doc) {
+                  final d = doc.data() as Map<String, dynamic>;
+                  String dateStr = '-';
+                  if (d['date'] is Timestamp) {
+                    final dt = (d['date'] as Timestamp).toDate();
+                    dateStr = '${dt.day}/${dt.month}/${dt.year}';
+                  }
+                  return [
+                    dateStr,
+                    d['doctorName'] ?? d['doctor'] ?? '-',
+                    d['type'] ?? d['specialty'] ?? '-',
+                    d['status'] ?? '-',
+                  ];
+                }).toList(),
+              ),
+ 
+            pw.SizedBox(height: 24),
+            pw.Divider(),
+            pw.SizedBox(height: 8),
+            pw.Text(
+              'Generated by DocLine · ${now.day}/${now.month}/${now.year}',
+              style: pw.TextStyle(
+                  fontSize: 9, color: PdfColors.grey600),
+            ),
+          ],
+        ),
+      );
+ 
+      setState(() => _progress = 0.9);
+ 
+      // ── 4. Save / Share PDF ───────────────────────────────────────────────
+      // sharePdf opens the native Share sheet on both Android and iOS.
+      // On Android → user taps "Save to Downloads" from the share options.
+      // On iOS     → user taps "Save to Files" to save to the Files app.
+      // The file does NOT go to the Gallery (gallery is for photos/videos).
+      final pdfBytes = await pdf.save();
+      final fileName =
+          'DocLine_Report_${now.day}-${now.month}-${now.year}.pdf';
+      await Printing.sharePdf(bytes: pdfBytes, filename: fileName);
+ 
+      setState(() {
+        _generating = false;
+        _progress = 1.0;
+      });
+    } catch (e) {
+      setState(() => _generating = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: Colors.red,
+            content: Text('Error generating PDF: $e'),
+          ),
+        );
+      }
+    }
+  }
+ 
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Container(
+        decoration: const BoxDecoration(gradient: AppColors.bgGradient),
+        child: SafeArea(
+          child: Column(
+            children: [
+              // AppBar
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 12, 20, 0),
+                child: Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.arrow_back_ios_new_rounded,
+                          color: AppColors.neonCyan),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                    const SizedBox(width: 4),
+                    const Text('Export Medical Report',
+                        style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.text)),
+                  ],
+                ),
+              ),
+ 
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Preview card
+                      NeonPanel(
+                        padding: const EdgeInsets.all(18),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 52,
+                              height: 68,
+                              decoration: BoxDecoration(
+                                color: AppColors.panel,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                    color: AppColors.neonCyan.withOpacity(0.3)),
+                              ),
+                              child: const Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.picture_as_pdf_rounded,
+                                      color: Colors.red, size: 26),
+                                  SizedBox(height: 4),
+                                  Text('PDF',
+                                      style: TextStyle(
+                                          color: AppColors.textMuted,
+                                          fontSize: 9,
+                                          fontWeight: FontWeight.bold)),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('Medical Report',
+                                      style: TextStyle(
+                                          color: AppColors.text,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 15)),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'DocLine · Generated on ${DateTime.now().day}/${DateTime.now().month}/${DateTime.now().year}',
+                                    style: const TextStyle(
+                                        color: AppColors.textMuted,
+                                        fontSize: 11),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  const Text(
+                                    'Includes: Personal Info, Appointments History',
+                                    style: TextStyle(
+                                        color: AppColors.neonCyan,
+                                        fontSize: 11),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+ 
+                      const SizedBox(height: 24),
+ 
+                      // Info boxes
+                      _infoItem(
+                        Icons.person_rounded,
+                        AppColors.neonCyan,
+                        'Personal Information',
+                        'Your name, email and phone number',
+                      ),
+                      const SizedBox(height: 10),
+                      _infoItem(
+                        Icons.calendar_today_rounded,
+                        AppColors.neonTeal,
+                        'Appointment History',
+                        'All your past and upcoming appointments',
+                      ),
+                      const SizedBox(height: 10),
+                      _infoItem(
+                        Icons.local_hospital_rounded,
+                        Colors.purple,
+                        'Doctor & Status',
+                        'Doctor name, appointment type and status',
+                      ),
+ 
+                      const SizedBox(height: 28),
+ 
+                      // Progress
+                      if (_generating) ...[
+                        NeonPanel(
+                          padding: const EdgeInsets.all(18),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('Generating PDF...',
+                                  style: TextStyle(
+                                      color: AppColors.text,
+                                      fontWeight: FontWeight.w600)),
+                              const SizedBox(height: 12),
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: LinearProgressIndicator(
+                                  value: _progress,
+                                  backgroundColor: AppColors.panel,
+                                  valueColor:
+                                      const AlwaysStoppedAnimation<Color>(
+                                          AppColors.neonTeal),
+                                  minHeight: 8,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                '${(_progress * 100).toInt()}%',
+                                style: const TextStyle(
+                                    color: AppColors.neonCyan,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                      ] else ...[
+                        NeonButton(
+                          label: 'Download PDF',
+                          icon: Icons.download_rounded,
+                          height: 52,
+                          onPressed: _generateAndDownload,
+                        ),
+                        const SizedBox(height: 20),
+                        // Hint about where the file is saved
+                        Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: AppColors.neonCyan.withOpacity(0.07),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                                color: AppColors.neonCyan.withOpacity(0.25)),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: const [
+                              Icon(Icons.info_outline_rounded,
+                                  color: AppColors.neonCyan, size: 18),
+                              SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  '📂 Where is my PDF?\n'
+                                  '• Android: tap "Save to Downloads" in the share sheet → find it in the Files app or Downloads folder.\n'
+                                  '• iOS: tap "Save to Files" in the share sheet → find it in the Files app.\n'
+                                  'The PDF does NOT go to the Gallery (gallery is photos/videos only).',
+                                  style: TextStyle(
+                                      color: AppColors.textMuted,
+                                      fontSize: 12,
+                                      height: 1.5),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _infoItem(
+      IconData icon, Color color, String title, String subtitle) {
+    return NeonPanel(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+                color: color.withOpacity(0.1), shape: BoxShape.circle),
+            child: Icon(icon, color: color, size: 18),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title,
+                    style: const TextStyle(
+                        color: AppColors.text,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13)),
+                Text(subtitle,
+                    style: const TextStyle(
+                        color: AppColors.textMuted, fontSize: 11)),
+              ],
+            ),
+          ),
+          const Icon(Icons.check_circle_rounded,
+              color: AppColors.neonTeal, size: 18),
+        ],
+      ),
+    );
+  }
+}
+ 
